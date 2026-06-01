@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "La Caza J — Nems fait-maison · Savoie",
+  title: "La Caza J — Nems fait-maison · Presqu'île de Guérande",
   description: "Commandez vos nems artisanaux (porc, poulet, crevette) et retirez-les chez Jayjay à Saint-André-des-Eaux (44).",
 };
 

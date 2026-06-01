@@ -46,10 +46,17 @@ function Icon({ name, size = 20, color = 'currentColor', stroke = 1.8, fill = 'n
   );
 }
 
-// ---- Photo placeholder ----
-function Photo({ label, className = '', style = {}, tint }: {
-  label: string; className?: string; style?: React.CSSProperties; tint?: string;
+// ---- Photo ----
+function Photo({ label, className = '', style = {}, tint, src }: {
+  label: string; className?: string; style?: React.CSSProperties; tint?: string; src?: string;
 }) {
+  if (src) {
+    return (
+      <div className={`ph ${className}`} style={{ ...style, padding: 0, overflow: 'hidden' }}>
+        <img src={src} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      </div>
+    );
+  }
   return (
     <div className={`ph ${className}`} style={style}>
       {tint && <div style={{ position: 'absolute', inset: 0, background: tint, opacity: 0.14 }} />}
@@ -129,9 +136,12 @@ function BrandBar({ onInsta, solid = false, right }: {
 }) {
   return (
     <div className={`topbar ${solid ? 'solid' : ''}`}>
-      <div className="brandmark">
-        <span className="lc-small">la</span>
-        <span className="lc-name">La Caza J</span>
+      <div className="brandmark" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <img src="/logo.jpg" alt="" style={{ height: 36, width: 'auto', display: 'block', borderRadius: 6 }} />
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span className="lc-small">la</span>
+          <span className="lc-name">La Caza J</span>
+        </div>
       </div>
       {right || (
         <button className="icon-btn" onClick={onInsta} aria-label="Instagram">
@@ -168,7 +178,7 @@ function SubscribeBlock() {
         <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--herb)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="bell" size={18} color="#fff" />
         </div>
-        <h3 className="display" style={{ fontSize: 19, color: 'var(--herb-deep)' }}>Prévenu·e des prochains créneaux</h3>
+        <h3 className="display" style={{ fontSize: 19, color: 'var(--herb-deep)' }}>Prévenez-moi des prochains créneaux</h3>
       </div>
       {done ? (
         <p style={{ fontSize: 14, color: 'var(--herb-deep)', fontWeight: 600, display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -197,9 +207,9 @@ function SubscribeBlock() {
 function WeekendCard({ wk, go }: { wk: Weekend; go: (name: string, ctx?: Record<string, string>) => void }) {
   const closed = wk.status !== 'open';
   return (
-    <div className="card wk-card">
+    <div className="card wk-card" style={closed ? { opacity: 0.45, filter: 'grayscale(0.6)' } : {}}>
       <div className="wk-top">
-        <Photo label={wk.photo} className="wk-thumb" tint="#C45C39" />
+        <Photo label={wk.photo} src="/event.png" className="wk-thumb" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
             <div>
@@ -208,7 +218,7 @@ function WeekendCard({ wk, go }: { wk: Weekend; go: (name: string, ctx?: Record<
             </div>
             <WeekendBadge wk={wk} />
           </div>
-          <div className="wk-sub"><Icon name="pin" size={13} /> {wk.address.split(',')[0]}</div>
+          <div className="wk-sub"><Icon name="pin" size={13} /> <a href={`https://maps.google.com/?q=${encodeURIComponent(wk.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2 }}>{wk.address.split(',')[0]}</a></div>
         </div>
       </div>
       <div className="wk-body">
@@ -247,9 +257,9 @@ function HomeScreen({ go, onInsta, weekends }: { go: (name: string, ctx?: Record
 
       {/* Hero */}
       <div className="pad" style={{ paddingTop: 6, paddingBottom: 30 }}>
-        <div className="eyebrow">Traiteur fait-maison · Savoie</div>
+        <div className="eyebrow">Traiteur fait-maison · Saint-André-des-Eaux</div>
         <h1 className="display hero-title" style={{ fontSize: 40, marginTop: 8 }}>
-          Des nems<br />à se relever<br />la nuit.
+          Des nems<br />à partager (ou pas !)
         </h1>
         <p className="hand hero-hand" style={{ fontSize: 26, lineHeight: 1.15, color: 'var(--terracotta-deep)', marginTop: 10, transform: 'rotate(-1.5deg)', transformOrigin: 'left' }}>
           la cuisine qui réchauffe les cœurs
@@ -259,8 +269,8 @@ function HomeScreen({ go, onInsta, weekends }: { go: (name: string, ctx?: Record
       <div className="pad">
         <Photo
           label="photo · plat de nems fumants"
+          src="/hero.png"
           style={{ height: 200, borderRadius: 'var(--r-lg)', border: '1px solid var(--line)', boxShadow: 'var(--shadow-md)' }}
-          tint="#C45C39"
         />
       </div>
 
@@ -281,7 +291,7 @@ function HomeScreen({ go, onInsta, weekends }: { go: (name: string, ctx?: Record
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
           <h2 className="display" style={{ fontSize: 26 }}>Prochains créneaux</h2>
         </div>
-        <p className="muted" style={{ fontSize: 13.5, marginBottom: 16 }}>Commandez avant la date limite, retirez chez Jayjay.</p>
+        <p className="muted" style={{ fontSize: 13.5, marginBottom: 16 }}>Commandez avant la date limite, retirez chez Jayjay à Saint-André-des-Eaux.</p>
       </div>
 
       <div className="section wk-grid">
@@ -372,7 +382,7 @@ function OrderScreen({ ctx, go, cart, setCart, slot, setSlot, onValidate, weeken
           <div className="prod-grid">
           {products.map((p) => (
             <div key={p.id} className="card prod">
-              <Photo label={p.photo} className="prod-img" tint={p.hue} />
+              <Photo label={p.photo} src="/nem-produit.jpeg" className="prod-img" />
               <div className="prod-body">
                 <div className="prod-row">
                   <h3 className="prod-name">{p.name}</h3>
@@ -606,7 +616,7 @@ function RecapScreen({ ctx, cart, slot, go, onPay, weekends, products }: {
             <div className="ico"><Icon name="pin" size={18} color="#fff" /></div>
             <div>
               <div style={{ fontWeight: 700 }}>{wk.pickupDate} · {slotLabel}</div>
-              <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>{wk.address}</div>
+              <div className="muted" style={{ fontSize: 13, marginTop: 2 }}><a href={`https://maps.google.com/?q=${encodeURIComponent(wk.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2 }}>{wk.address}</a></div>
             </div>
           </div>
 
@@ -676,7 +686,7 @@ function ConfirmationScreen({ status, ctx, cart, slot, account, go, weekends, pr
             <div className="eyebrow" style={{ color: 'var(--herb-deep)' }}>Votre retrait</div>
             <div className="display" style={{ fontSize: 26, marginTop: 6, color: 'var(--herb-deep)' }}>{wk.pickupDate} · {slotLabel}</div>
             <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center', marginTop: 8, fontSize: 13.5, color: 'var(--herb-deep)', fontWeight: 600 }}>
-              <Icon name="pin" size={15} color="var(--herb-deep)" /> {wk.address}
+              <Icon name="pin" size={15} color="var(--herb-deep)" /> <a href={`https://maps.google.com/?q=${encodeURIComponent(wk.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2 }}>{wk.address}</a>
             </div>
           </div>
 
@@ -731,7 +741,7 @@ function OrderCard({ o, highlight }: { o: Order; highlight?: boolean }) {
           <div className="muted" style={{ fontSize: 12.5, marginTop: 4, display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
             <Icon name="clock" size={13} color="var(--ink-soft)" /> Retrait {o.slot}
             <span style={{ color: 'var(--ink-faint)' }}>·</span>
-            <Icon name="pin" size={13} color="var(--ink-soft)" /> {o.address.split(',')[0]}
+            <Icon name="pin" size={13} color="var(--ink-soft)" /> <a href={`https://maps.google.com/?q=${encodeURIComponent(o.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2 }}>{o.address.split(',')[0]}</a>
           </div>
         </div>
         <span className={`badge ${badge[0]}`}>{badge[1]}</span>
@@ -874,6 +884,7 @@ export default function App() {
   const go = (name: string, ctx: Record<string, string> = {}) => {
     setRoute({ name, ctx });
     requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
       document.querySelectorAll('.screen').forEach((s) => ((s as HTMLElement).scrollTop = 0));
     });
   };
@@ -971,11 +982,11 @@ export default function App() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#ede5d4', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+    <div style={{ minHeight: '100dvh', background: '#ede5d4', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
       <div style={{
         width: '100%',
         maxWidth: 480,
-        minHeight: '100vh',
+        height: '100dvh',
         background: 'var(--cream)',
         position: 'relative',
         boxShadow: '0 0 0 1px rgba(43,32,23,0.1), 0 24px 80px rgba(43,32,23,0.12)',

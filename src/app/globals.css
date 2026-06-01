@@ -90,7 +90,7 @@ html, body {
 /* ---- Top brand bar ---- */
 .topbar {
   position: sticky; top: 0; z-index: 30;
-  padding: 56px 20px 12px;
+  padding: 56px 20px 20px;
   display: flex; align-items: center; justify-content: space-between;
   background: linear-gradient(var(--cream) 72%, rgba(250,243,231,0));
 }
@@ -288,7 +288,7 @@ h1,h2,h3,h4,p { margin: 0; }
    Sticky bottom bar
    =========================================================== */
 .dock {
-  position: relative; z-index: 20;
+  position: sticky; bottom: 0; z-index: 20;
   background: var(--paper);
   border-top: 1px solid var(--line);
   box-shadow: 0 -8px 24px rgba(43,32,23,0.07);
