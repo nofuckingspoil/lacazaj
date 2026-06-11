@@ -2,7 +2,7 @@
 // API REST directe (pas besoin du SDK)
 
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email'
-const SENDER = { name: 'La Caza J — Jayjay', email: 'lacazaj@proton.me' }
+const SENDER = { name: 'La Caza J — Jenny', email: 'lacazaj@proton.me' }
 
 interface EmailPayload {
   to: { email: string; name?: string }[]
@@ -111,7 +111,7 @@ export async function sendConfirmationEmail(data: ConfirmationData) {
   const content = `
     <h1 style="font-family:Georgia,serif;font-size:28px;color:#2B2017;margin:0 0 6px;">Merci ${data.toName ? `, ${data.toName.split(' ')[0]}` : ''} !</h1>
     <p style="font-size:15px;color:#6E6051;margin:0 0 4px;">Votre commande <strong style="color:#2B2017;">${data.ref}</strong> est confirmée.</p>
-    <p style="font-size:15px;color:#6E6051;margin:0 0 20px;">Jayjay s'occupe du reste 🎉</p>
+    <p style="font-size:15px;color:#6E6051;margin:0 0 20px;">Jenny s'occupe du reste 🎉</p>
 
     ${pickupCard(data.pickupDate, data.slotLabel, data.address)}
 
@@ -155,7 +155,7 @@ export async function sendReminderEmail(data: ReminderData) {
   const content = `
     <h1 style="font-family:Georgia,serif;font-size:26px;color:#2B2017;margin:0 0 6px;">À demain !</h1>
     <p style="font-size:15px;color:#6E6051;margin:0 0 20px;">
-      C'est demain que vous retirez votre commande <strong style="color:#2B2017;">${data.ref}</strong> chez Jayjay.
+      C'est demain que vous retirez votre commande <strong style="color:#2B2017;">${data.ref}</strong> chez Jenny.
     </p>
 
     ${pickupCard(data.pickupDate, data.slotLabel, data.address)}
@@ -200,7 +200,7 @@ export async function sendReviewEmail(data: ReviewData) {
 
     <div style="background:#F6E2D5;border-radius:12px;padding:24px;text-align:center;margin:24px 0;">
       <div style="font-family:Georgia,serif;font-size:18px;color:#A2462A;margin-bottom:16px;">
-        Vos retours comptent énormément pour Jayjay 🙏
+        Vos retours comptent énormément pour Jenny 🙏
       </div>
       <a href="https://www.instagram.com/la_caza_j/"
          style="display:inline-block;background:#C45C39;color:#fff;text-decoration:none;
@@ -210,7 +210,7 @@ export async function sendReviewEmail(data: ReviewData) {
     </div>
 
     <p style="font-size:14px;color:#9C8E7C;text-align:center;margin:20px 0 0;">
-      Un problème avec votre commande ? Appelez Jayjay directement.<br/>
+      Un problème avec votre commande ? Appelez Jenny directement.<br/>
       Elle sera ravie d'arranger ça.
     </p>`
 

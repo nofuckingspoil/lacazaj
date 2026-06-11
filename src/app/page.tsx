@@ -112,8 +112,9 @@ function Countdown({ deadline, compact = false }: { deadline: number; compact?: 
 }
 
 // ---- Weekend badge ----
-function WeekendBadge({ wk }: { wk: Weekend }) {
-  if (wk.status === 'full') return <span className="badge badge-full">Complet</span>;
+function WeekendBadge({ wk, tooLate }: { wk: Weekend; tooLate?: boolean }) {
+  if (wk.status === 'full' || wk.stockLeft <= 0) return <span className="badge badge-full">Épuisé</span>;
+  if (tooLate) return <span className="badge badge-late">Commandes closes</span>;
   if (wk.stockLeft <= 40) return <span className="badge badge-low"><span className="dot" />Il reste {wk.stockLeft} nems</span>;
   return <span className="badge badge-stock"><span className="dot" />Il reste {wk.stockLeft} nems</span>;
 }
@@ -139,8 +140,7 @@ function BrandBar({ onInsta, solid = false, right }: {
       <div className="brandmark" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <img src="/logo.jpg" alt="" style={{ height: 36, width: 'auto', display: 'block', borderRadius: 6 }} />
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span className="lc-small">la</span>
-          <span className="lc-name">La Caza J</span>
+          <span className="lc-name">La Caza <span className="lc-j">J</span></span>
         </div>
       </div>
       {right || (
@@ -148,6 +148,69 @@ function BrandBar({ onInsta, solid = false, right }: {
           <Icon name="insta" size={19} />
         </button>
       )}
+    </div>
+  );
+}
+
+// ---- Logique d'inscription partagée (même endpoint que le bloc du bas) ----
+function useEmailSignup() {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [error, setError] = useState('');
+  const submit = async () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Adresse email invalide'); setStatus('error'); return;
+    }
+    setStatus('loading'); setError('');
+    try {
+      await subscribeEmail(email.trim());
+      setStatus('done');
+    } catch (e) {
+      if ((e as { code?: string })?.code === '23505') setStatus('done'); // déjà inscrit = OK
+      else { setError('Une erreur est survenue, réessayez.'); setStatus('error'); }
+    }
+  };
+  return { email, setEmail, status, error, submit };
+}
+
+// ---- Inscription inline sur les cartes indisponibles (lien discret → champ) ----
+function CardSignup() {
+  const [open, setOpen] = useState(false);
+  const { email, setEmail, status, error, submit } = useEmailSignup();
+
+  if (status === 'done') {
+    return (
+      <div className="card-signup-ok">
+        <Icon name="check" size={16} color="var(--herb-deep)" /> C&apos;est noté, vous serez prévenu des prochaines fournées.
+      </div>
+    );
+  }
+  if (!open) {
+    return (
+      <button type="button" className="card-signup-link" onClick={() => setOpen(true)}>
+        <Icon name="bell" size={14} color="var(--herb-deep)" /> Me prévenir des prochaines fournées
+      </button>
+    );
+  }
+  return (
+    <div className="card-signup">
+      <div className="card-signup-row">
+        <input
+          className="input"
+          type="email"
+          placeholder="votre@email.fr"
+          autoFocus
+          value={email}
+          disabled={status === 'loading'}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <button className="btn btn-herb btn-sm" onClick={submit} disabled={status === 'loading'}>
+          {status === 'loading' ? '…' : 'M’inscrire'}
+        </button>
+      </div>
+      {status === 'error' && <p className="card-signup-err">{error}</p>}
     </div>
   );
 }
@@ -178,11 +241,11 @@ function SubscribeBlock() {
         <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--herb)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="bell" size={18} color="#fff" />
         </div>
-        <h3 className="display" style={{ fontSize: 19, color: 'var(--herb-deep)' }}>Prévenez-moi des prochains créneaux</h3>
+        <h3 className="display" style={{ fontSize: 19, color: 'var(--herb-deep)' }}>Prévenez-moi des prochaines fournées</h3>
       </div>
       {done ? (
         <p style={{ fontSize: 14, color: 'var(--herb-deep)', fontWeight: 600, display: 'flex', gap: 6, alignItems: 'center' }}>
-          <Icon name="check" size={18} color="var(--herb-deep)" /> C&apos;est noté ! On vous écrit dès l&apos;ouverture.
+          <Icon name="check" size={18} color="var(--herb-deep)" /> C&apos;est noté ! On vous informe de la prochaine fournée
         </p>
       ) : (
         <div style={{ display: 'flex', gap: 8 }}>
@@ -204,10 +267,41 @@ function SubscribeBlock() {
 }
 
 // ---- Weekend card ----
+// ---- Helpers cartes week-end ----
+const FR_MONTHS: Record<string, number> = {
+  janvier: 0, février: 1, fevrier: 1, mars: 2, avril: 3, mai: 4, juin: 5,
+  juillet: 6, août: 7, aout: 7, septembre: 8, octobre: 9, novembre: 10,
+  décembre: 11, decembre: 11,
+};
+// Fin de la journée de retrait (en ms) à partir de "Samedi 13 juin 2026"
+function pickupEndMs(wk: Weekend): number | null {
+  const m = (wk.pickupDateLong || '').toLowerCase().match(/(\d{1,2})\s+([a-zàâäéèêëîïôöûüç]+)\s+(\d{4})/);
+  if (!m) return null;
+  const month = FR_MONTHS[m[2]];
+  if (month == null) return null;
+  return new Date(+m[3], month, +m[1], 23, 59, 59).getTime();
+}
+// "Vendredi 12 juin à 19h"
+function formatDeadline(ms: number): string {
+  const d = new Date(ms);
+  const date = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+  const cap = date.charAt(0).toUpperCase() + date.slice(1);
+  const hh = d.getHours();
+  const mm = d.getMinutes();
+  const time = mm === 0 ? `${hh}h` : `${hh}h${String(mm).padStart(2, '0')}`;
+  return `${cap} à ${time}`;
+}
+
 function WeekendCard({ wk, go }: { wk: Weekend; go: (name: string, ctx?: Record<string, string>) => void }) {
-  const closed = wk.status !== 'open';
+  const now = useNow();
+  const tooLate = now != null && wk.deadline - now <= 0;
+  const soldOut = wk.status === 'full' || wk.stockLeft <= 0;
+  const blocked = soldOut || tooLate;
+  const pct = wk.stockTotal > 0 ? Math.max(0, Math.min(100, Math.round((wk.stockLeft / wk.stockTotal) * 100))) : 0;
+  const dayMonth = wk.pickupDate.replace(/^\D*/, '') || wk.pickupDate; // "Samedi 13 juin" -> "13 juin"
+
   return (
-    <div className="card wk-card" style={closed ? { opacity: 0.45, filter: 'grayscale(0.6)' } : {}}>
+    <div className={`card wk-card${blocked ? ' wk-blocked' : ''}`}>
       <div className="wk-top">
         <Photo label={wk.photo} src="/event.png" className="wk-thumb" />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -216,31 +310,46 @@ function WeekendCard({ wk, go }: { wk: Weekend; go: (name: string, ctx?: Record<
               <div className="eyebrow" style={{ fontSize: 10.5 }}>Retrait</div>
               <div className="wk-date">{wk.pickupDate}</div>
             </div>
-            <WeekendBadge wk={wk} />
+            <WeekendBadge wk={wk} tooLate={tooLate} />
           </div>
-          <div className="wk-sub"><Icon name="pin" size={13} /> <a href={`https://maps.google.com/?q=${encodeURIComponent(wk.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2 }}>{wk.address.split(',')[0]}</a></div>
+          <div className="wk-sub"><Icon name="pin" size={13} /> Saint-André-des-Eaux</div>
         </div>
       </div>
+
       <div className="wk-body">
-        <div className="wk-meta">
-          {wk.status === 'open' && (
-            <span className="muted" style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Icon name="clock" size={15} color="var(--ink-soft)" /> Commandes jusqu&apos;à&nbsp;:
-            </span>
-          )}
-        </div>
-        {wk.status === 'open' ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <Countdown deadline={wk.deadline} />
-            <button className="btn btn-primary btn-sm" onClick={() => go('order', { weekendId: wk.id })}>
-              Commander <Icon name="arrow" size={16} color="#fff" />
-            </button>
+        {blocked ? (
+          <div className="wk-cta">
+            <div className="wk-cta-title">
+              {soldOut
+                ? `La fournée du ${dayMonth} est épuisée`
+                : `Commandes closes pour la fournée du ${dayMonth}`}
+            </div>
+            <p className="wk-cta-text" style={{ marginBottom: 10 }}>
+              {soldOut
+                ? `Tout est déjà parti ! Ne loupez pas la prochaine fournée.`
+                : `Les commandes pour ce week-end sont closes.`}
+            </p>
+            <CardSignup />
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <span className="muted" style={{ fontSize: 14 }}>Stock épuisé pour ce week-end.</span>
-            <button className="btn btn-ghost btn-sm" disabled style={{ opacity: .5 }}>Complet</button>
-          </div>
+          <>
+            <div className="wk-progress" aria-hidden="true">
+              <div className="wk-progress-fill" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="wk-progress-label">Il reste <strong>{wk.stockLeft} nems</strong></div>
+
+            <div className="wk-deadline">
+              <div className="wk-deadline-head">
+                <Icon name="clock" size={14} color="var(--ink-soft)" /> Commandez avant le{' '}
+                <strong>{formatDeadline(wk.deadline)}</strong>
+              </div>
+              <Countdown deadline={wk.deadline} />
+            </div>
+
+            <button className="btn btn-primary" onClick={() => go('order', { weekendId: wk.id })}>
+              Commander <Icon name="arrow" size={18} color="#fff" />
+            </button>
+          </>
         )}
       </div>
     </div>
@@ -249,8 +358,17 @@ function WeekendCard({ wk, go }: { wk: Weekend; go: (name: string, ctx?: Record<
 
 // ========================== HOME ==========================
 function HomeScreen({ go, onInsta, weekends }: { go: (name: string, ctx?: Record<string, string>) => void; onInsta: () => void; weekends: Weekend[] }) {
-  const open = weekends.filter((w) => w.status === 'open');
-  const full = weekends.filter((w) => w.status === 'full');
+  const now = useNow();
+  // On garde les week-ends ouverts/épuisés, on masque ceux dont la journée de retrait est passée,
+  // et on les classe par date de retrait (du plus proche au plus loin)
+  const visible = weekends
+    .filter((w) => w.status === 'open' || w.status === 'full')
+    .filter((w) => {
+      const pe = pickupEndMs(w);
+      return !(pe != null && now != null && now > pe);
+    })
+    .slice()
+    .sort((a, b) => (pickupEndMs(a) ?? Infinity) - (pickupEndMs(b) ?? Infinity));
   return (
     <div className="screen">
       <BrandBar onInsta={onInsta} />
@@ -279,28 +397,51 @@ function HomeScreen({ go, onInsta, weekends }: { go: (name: string, ctx?: Record
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
           <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, background: 'var(--herb)' }} />
           <p style={{ fontSize: 15.5, color: 'var(--ink-soft)' }}>
-            Jayjay — <em style={{ fontStyle: 'normal', fontWeight: 700, color: 'var(--ink)' }}>« la J »</em> — roule ses nems à la main depuis toujours
-            pour régaler ses proches. Aujourd&apos;hui elle ouvre sa cuisine : porc, poulet ou crevette,
-            servis avec salade, menthe et sauce nem. Fait-maison, jamais industriel.
+            <em style={{ fontStyle: 'normal', fontWeight: 700, color: 'var(--ink)' }}>Passionnée de cuisine, Jenny</em>{' '}a toujours eu à cœur de régaler ses proches avec des plats faits maison et authentiques.<br /><br />Aujourd&apos;hui elle vous ouvre les portes de sa cuisine <strong style={{ fontWeight: 700, color: 'var(--ink)' }}>1 à 2 fois par mois</strong>.<br /><br />N&apos;attendez plus et découvrez ses délicieux nems porc, poulet ou crevette, servis avec salade, menthe et sauce nem.
           </p>
         </div>
       </div>
 
+      {/* How it works */}
+      <div className="pad" style={{ paddingTop: 26 }}>
+        <div className="eyebrow" style={{ marginBottom: 16 }}>Comment ça marche</div>
+        <div className="steps">
+          {[
+            { icon: 'flame', title: 'On ouvre une fournée', text: 'Jenny annonce une nouvelle date de retrait avec un stock limité : quand c’est parti, c’est parti.' },
+            { icon: 'clock', title: 'Vous commandez à l’avance', text: 'Avant la date limite : vous choisissez vos nems et un créneau de retrait, puis vous payez.' },
+            { icon: 'pin', title: 'Vous venez retirer', text: 'Chez Jenny, sur votre créneau de 30 min. Pas de livraison, du fait-maison.' },
+          ].map((s, i, arr) => (
+            <div className="step" key={s.title}>
+              <div className="step-rail">
+                <div className="step-dot">
+                  <Icon name={s.icon} size={18} color="var(--terracotta-deep)" />
+                  <span className="step-num">{i + 1}</span>
+                </div>
+                {i < arr.length - 1 && <div className="step-line" />}
+              </div>
+              <div className="step-body">
+                <div className="step-title">{s.title}</div>
+                <p className="muted" style={{ fontSize: 14, marginTop: 2 }}>{s.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Weekends */}
-      <div className="section" style={{ paddingTop: 26 }}>
+      <div className="section" style={{ paddingTop: 30 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
           <h2 className="display" style={{ fontSize: 26 }}>Prochains créneaux</h2>
         </div>
-        <p className="muted" style={{ fontSize: 13.5, marginBottom: 16 }}>Commandez avant la date limite, retirez chez Jayjay à Saint-André-des-Eaux.</p>
+        <p className="muted" style={{ fontSize: 13.5, marginBottom: 16 }}>Commandez avant la date limite, venez retirer votre commande à la Caza J sur St André des Eaux puis régalez vous lors de vos apéros/soirées en famille ou entre amis !</p>
       </div>
 
       <div className="section wk-grid">
-        {open.map((wk) => <WeekendCard key={wk.id} wk={wk} go={go} />)}
-        {full.map((wk) => <WeekendCard key={wk.id} wk={wk} go={go} />)}
+        {visible.map((wk) => <WeekendCard key={wk.id} wk={wk} go={go} />)}
       </div>
 
-      {/* Subscribe */}
-      <div className="section" style={{ paddingTop: 12 }}>
+      {/* Subscribe — à la fin */}
+      <div id="subscribe-block" className="section" style={{ paddingTop: 12 }}>
         <SubscribeBlock />
       </div>
 
@@ -322,7 +463,7 @@ function HomeScreen({ go, onInsta, weekends }: { go: (name: string, ctx?: Record
           <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => go('legal')}>Confidentialité</span>
         </p>
         <a href="/admin" className="faint" style={{ fontSize: 11, marginTop: 14, display: 'inline-block', textDecoration: 'underline' }}>
-          Espace Jayjay (admin)
+          Espace Jenny (admin)
         </a>
       </div>
     </div>
@@ -342,10 +483,16 @@ function OrderScreen({ ctx, go, cart, setCart, slot, setSlot, onValidate, weeken
   products: Product[];
 }) {
   const wk = weekendById(ctx.weekendId, weekends) || weekends[0] || WEEKENDS[0];
+  const now = useNow();
+  const tooLate = now != null && wk.deadline - now <= 0;
   const total = products.reduce((s, p) => s + (cart[p.id as keyof Cart] || 0), 0);
   const amount = total * PRICE;
   const enough = total >= 6;
-  const canValidate = enough && !!slot;
+  const canValidate = enough && !!slot && !tooLate;
+  const alertNextSlots = () => {
+    go('home');
+    setTimeout(() => document.getElementById('subscribe-block')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+  };
 
   const setQty = (id: string, v: number) => setCart({ ...cart, [id]: v });
 
@@ -369,7 +516,7 @@ function OrderScreen({ ctx, go, cart, setCart, slot, setSlot, onValidate, weeken
               <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>Il reste {wk.stockLeft} nems</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div className="faint" style={{ fontSize: 11, marginBottom: 4 }}>Commandes jusqu&apos;à</div>
+              <div className="faint" style={{ fontSize: 11, marginBottom: 4 }}>Commandez jusqu&apos;au {formatDeadline(wk.deadline).toLowerCase()}</div>
               <Countdown deadline={wk.deadline} compact />
             </div>
           </div>
@@ -378,7 +525,7 @@ function OrderScreen({ ctx, go, cart, setCart, slot, setSlot, onValidate, weeken
         {/* products */}
         <div className="section" style={{ paddingTop: 16 }}>
           <h2 className="display" style={{ fontSize: 24, marginBottom: 4 }}>Composez votre commande</h2>
-          <p className="muted" style={{ fontSize: 13.5, marginBottom: 16 }}>Par tranches de 3 · minimum 6 nems.</p>
+          <p className="muted" style={{ fontSize: 13.5, marginBottom: 16 }}>Par tranches de 2 · minimum 6 nems.</p>
           <div className="prod-grid">
           {products.map((p) => (
             <div key={p.id} className="card prod">
@@ -394,13 +541,13 @@ function OrderScreen({ ctx, go, cart, setCart, slot, setSlot, onValidate, weeken
                 </div>
                 {/* stepper */}
                 <div className="stepper">
-                  <span className="stepper-label">par 3 · {cart[p.id as keyof Cart] || 0} nem{(cart[p.id as keyof Cart] || 0) > 1 ? 's' : ''}</span>
+                  <span className="stepper-label">par 2 · {cart[p.id as keyof Cart] || 0} nem{(cart[p.id as keyof Cart] || 0) > 1 ? 's' : ''}</span>
                   <div className="stepper-ctrls">
-                    <button className="step-btn" disabled={(cart[p.id as keyof Cart] || 0) <= 0} onClick={() => setQty(p.id, Math.max(0, (cart[p.id as keyof Cart] || 0) - 3))} aria-label="Retirer">
+                    <button className="step-btn" disabled={(cart[p.id as keyof Cart] || 0) <= 0} onClick={() => setQty(p.id, Math.max(0, (cart[p.id as keyof Cart] || 0) - 2))} aria-label="Retirer">
                       <Icon name="minus" size={20} />
                     </button>
                     <span className="step-val">{cart[p.id as keyof Cart] || 0}</span>
-                    <button className="step-btn" onClick={() => setQty(p.id, (cart[p.id as keyof Cart] || 0) + 3)} aria-label="Ajouter">
+                    <button className="step-btn" onClick={() => setQty(p.id, (cart[p.id as keyof Cart] || 0) + 2)} aria-label="Ajouter">
                       <Icon name="plus" size={20} />
                     </button>
                   </div>
@@ -414,7 +561,7 @@ function OrderScreen({ ctx, go, cart, setCart, slot, setSlot, onValidate, weeken
         {/* pickup slot */}
         <div className="section" style={{ paddingTop: 8, paddingBottom: 24 }}>
           <h2 className="display" style={{ fontSize: 24, marginBottom: 4 }}>Créneau de retrait</h2>
-          <p className="muted" style={{ fontSize: 13.5, marginBottom: 14 }}>Entre 17h et 20h, par tranches de 15 min.</p>
+          <p className="muted" style={{ fontSize: 13.5, marginBottom: 14 }}>Entre 18h et 21h, par tranches de 30 min.</p>
           <div className="slots">
             {wk.slots.map((s) => {
               const full = s.count >= s.max;
@@ -437,8 +584,9 @@ function OrderScreen({ ctx, go, cart, setCart, slot, setSlot, onValidate, weeken
 
       {/* sticky dock */}
       <div className="dock">
-        {!enough && total > 0 && <div className="dock-note">Encore {6 - total} nems pour atteindre le minimum</div>}
-        {enough && !slot && <div className="dock-note">Choisissez un créneau de retrait ci-dessus</div>}
+        {tooLate && <div className="dock-note">Trop tard pour ce week-end — les commandes sont closes.</div>}
+        {!tooLate && !enough && total > 0 && <div className="dock-note">Encore {6 - total} nems pour atteindre le minimum</div>}
+        {!tooLate && enough && !slot && <div className="dock-note">Choisissez un créneau de retrait ci-dessus</div>}
         <div className="dock-row">
           <div className="dock-total">
             <div className="n">{eur(amount)}</div>
@@ -447,14 +595,24 @@ function OrderScreen({ ctx, go, cart, setCart, slot, setSlot, onValidate, weeken
               {slot ? ` · retrait ${wk.slots.find(s => s.id === slot)?.label}` : ''}
             </div>
           </div>
-          <button
-            className="btn btn-primary"
-            style={{ width: 'auto', padding: '15px 22px' }}
-            disabled={!canValidate}
-            onClick={onValidate}
-          >
-            Valider <Icon name="arrow" size={18} color="#fff" />
-          </button>
+          {tooLate ? (
+            <button
+              className="btn btn-herb"
+              style={{ width: 'auto', padding: '15px 22px' }}
+              onClick={alertNextSlots}
+            >
+              M&apos;alerter des prochains créneaux <Icon name="arrow" size={18} color="#fff" />
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary"
+              style={{ width: 'auto', padding: '15px 22px' }}
+              disabled={!canValidate}
+              onClick={onValidate}
+            >
+              Valider <Icon name="arrow" size={18} color="#fff" />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -537,12 +695,12 @@ function AuthSheet({ onClose, onSubmit }: {
               <div className="field">
                 <label>Téléphone</label>
                 <input className="input" type="tel" placeholder="06 12 34 56 78" value={f.tel} onChange={set('tel')} />
-                <p className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>Utile à Jayjay pour vous joindre le jour du retrait.</p>
+                <p className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>Utile à Jenny pour vous joindre le jour du retrait.</p>
               </div>
 
               <div className={`check ${consent ? 'on' : ''}`} onClick={() => setConsent(!consent)} style={{ marginTop: 4, marginBottom: 14 }}>
                 <span className="box">{consent && <Icon name="check" size={15} color="#fff" stroke={2.4} />}</span>
-                <span>Je souhaite recevoir les annonces des prochains créneaux. <span className="faint">(facultatif)</span></span>
+                <span>Je souhaite recevoir les annonces des prochaines fournées. <span className="faint">(facultatif)</span></span>
               </div>
             </>
           )}
@@ -678,7 +836,7 @@ function ConfirmationScreen({ status, ctx, cart, slot, account, go, weekends, pr
           <h1 className="display" style={{ fontSize: 32, marginTop: 8 }}>
             Merci{account.nom ? `, ${account.nom.split(' ')[0]}` : ''} !
           </h1>
-          <p className="hand" style={{ fontSize: 24, color: 'var(--terracotta-deep)', marginTop: 4 }}>Jayjay s&apos;occupe du reste</p>
+          <p className="hand" style={{ fontSize: 24, color: 'var(--terracotta-deep)', marginTop: 4 }}>Jenny s&apos;occupe du reste</p>
         </div>
 
         <div className="pad" style={{ paddingTop: 10 }}>
@@ -802,14 +960,14 @@ function AccountScreen({ go, orders, account, consent, setConsent }: {
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 14 }}>Modifier ou annuler ?</div>
-            <div className="muted" style={{ fontSize: 13 }}>Appelez Jayjay au 06 50 12 34 56</div>
+            <div className="muted" style={{ fontSize: 13 }}>Appelez Jenny au 06 50 12 34 56</div>
           </div>
         </div>
 
         {/* consent */}
         <div className={`check ${consent ? 'on' : ''}`} onClick={() => setConsent(!consent)} style={{ marginTop: 16, marginBottom: 30 }}>
           <span className="box">{consent && <Icon name="check" size={15} color="#fff" stroke={2.4} />}</span>
-          <span>Recevoir les annonces des prochains créneaux par email.</span>
+          <span>Recevoir les annonces des prochaines fournées par email.</span>
         </div>
       </div>
     </div>
@@ -819,7 +977,7 @@ function AccountScreen({ go, orders, account, consent, setConsent }: {
 // ========================== LEGAL ==========================
 function LegalScreen({ go }: { go: (name: string, ctx?: Record<string, string>) => void }) {
   const sections: [string, string][] = [
-    ['Éditeur', 'La Caza J — micro-entreprise de Jayjay. Saint-André-des-Eaux (44). Contact : bonjour@lacazaj.fr'],
+    ['Éditeur', 'La Caza J — micro-entreprise de Jenny. Saint-André-des-Eaux (44). Contact : bonjour@lacazaj.fr'],
     ['Conditions de vente', "Commandes payées d'avance via Stripe. Retrait uniquement, sur le créneau choisi, à l'adresse indiquée."],
     ['Denrées périssables', "Conformément à l'article L221-28 du Code de la consommation, aucun droit de rétractation ne s'applique aux denrées alimentaires périssables."],
     ['Allergènes', 'Les allergènes de chaque produit sont indiqués sur la fiche produit. Préparé dans une cuisine manipulant gluten, soja, œuf et crustacés.'],
@@ -850,7 +1008,7 @@ function LegalScreen({ go }: { go: (name: string, ctx?: Record<string, string>) 
 // ========================== APP ROOT ==========================
 export default function App() {
   const [route, setRoute] = useState<Route>({ name: 'home', ctx: {} });
-  const [cart, setCart] = useState<Cart>({ porc: 6, poulet: 3, crevette: 0 });
+  const [cart, setCart] = useState<Cart>({ porc: 6, poulet: 0, crevette: 0 });
   const [slot, setSlot] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
   const [account, setAccount] = useState<Account>({ email: '', nom: '', tel: '', consent: false });
@@ -986,7 +1144,7 @@ export default function App() {
       <div style={{
         width: '100%',
         maxWidth: 480,
-        height: '100dvh',
+        minHeight: '100dvh',
         background: 'var(--cream)',
         position: 'relative',
         boxShadow: '0 0 0 1px rgba(43,32,23,0.1), 0 24px 80px rgba(43,32,23,0.12)',

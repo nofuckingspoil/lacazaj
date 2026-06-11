@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "La Caza J — Nems fait-maison · Presqu'île de Guérande",
-  description: "Commandez vos nems artisanaux (porc, poulet, crevette) et retirez-les chez Jayjay à Saint-André-des-Eaux (44).",
+  description: "Commandez vos nems artisanaux (porc, poulet, crevette) et retirez-les chez Jenny à Saint-André-des-Eaux (44).",
 };
 
 export default function RootLayout({

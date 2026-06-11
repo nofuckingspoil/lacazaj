@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { WEEKENDS, A_ORDERS, PRICE, weekendById, eur, type AdminOrder } from '@/lib/data';
+import { useState, useEffect } from 'react';
+import { PRICE, eur } from '@/lib/data';
 import './admin.css';
 
 // ---- Icon (inline) ----
@@ -38,13 +38,50 @@ function Icon({ name, size = 20, color = 'currentColor', stroke = 1.8, fill = 'n
 }
 
 // ---- helpers ----
-function agg(orders: AdminOrder[]) {
+// ===== Données réelles (vue d'ensemble depuis la base) =====
+interface OvWeekend {
+  id: string; label: string; pickup_date: string; pickup_date_long: string; deadline: string;
+  stock_total: number; stock_left: number; address: string; status: string;
+}
+interface OvOrder {
+  ref: string; weekendId: string; client: string; tel: string;
+  slot: string; slotKey: string; porc: number; poulet: number; crevette: number;
+}
+interface Overview { weekends: OvWeekend[]; orders: OvOrder[] }
+
+function useOverview(): Overview | null {
+  const [data, setData] = useState<Overview | null>(null);
+  useEffect(() => {
+    fetch('/api/admin/overview')
+      .then((r) => r.json())
+      .then((d) => {
+        // tri par date de retrait (du plus proche au plus loin)
+        const weekends = ([...(d.weekends ?? [])] as OvWeekend[]).sort(
+          (a, b) => longToInputDate(a.pickup_date_long).localeCompare(longToInputDate(b.pickup_date_long)),
+        );
+        setData({ weekends, orders: d.orders ?? [] });
+      })
+      .catch(() => setData({ weekends: [], orders: [] }));
+  }, []);
+  return data;
+}
+
+const nems = (o: OvOrder) => o.porc + o.poulet + o.crevette;
+function agg(orders: OvOrder[]) {
   return orders.reduce(
     (a, o) => { a.porc += o.porc; a.poulet += o.poulet; a.crevette += o.crevette; return a; },
     { porc: 0, poulet: 0, crevette: 0 }
   );
 }
-function nems(o: AdminOrder) { return o.porc + o.poulet + o.crevette; }
+const STATUS_CHIP: Record<string, { cls: string; label: string }> = {
+  open: { cls: 'open', label: 'Ouvert' },
+  full: { cls: 'full', label: 'Épuisé' },
+  closed: { cls: 'full', label: 'Fermé' },
+  archived: { cls: 'full', label: 'Archivé' },
+};
+const admLoading = (
+  <div className="adm-card" style={{ padding: 24, textAlign: 'center', color: 'var(--ink-faint)' }}>Chargement…</div>
+);
 
 // ========================== TOP BAR ==========================
 function AdminBar({ tab, setTab }: { tab: string; setTab: (t: string) => void }) {
@@ -59,7 +96,7 @@ function AdminBar({ tab, setTab }: { tab: string; setTab: (t: string) => void })
       <div className="adm-bar-inner">
         <div className="adm-brand">
           <span className="nm">La Caza J</span>
-          <span className="role">espace Jayjay</span>
+          <span className="role">espace Jenny</span>
         </div>
         <a href="/" className="abtn ghost" style={{ textDecoration: 'none' }}>
           <Icon name="arrow" size={15} /> Voir le site client
@@ -80,17 +117,17 @@ function AdminBar({ tab, setTab }: { tab: string; setTab: (t: string) => void })
 
 // ========================== DASHBOARD ==========================
 function Dashboard({ setTab }: { setTab: (t: string) => void }) {
-  const wk13 = weekendById('wk-13juin')!;
-  const a13 = agg(A_ORDERS);
-  const n13 = a13.porc + a13.poulet + a13.crevette;
+  const data = useOverview();
+  if (!data) return admLoading;
 
-  const wk20 = weekendById('wk-20juin')!;
-  const sold20 = wk20.stockTotal - wk20.stockLeft;
-
-  const cards = [
-    { wk: wk13, orders: A_ORDERS.length, sold: n13, ca: n13 * PRICE },
-    { wk: wk20, orders: 4, sold: sold20, ca: sold20 * PRICE },
-  ];
+  const cards = data.weekends
+    .filter((w) => w.status !== 'archived')
+    .map((w) => {
+      const ords = data.orders.filter((o) => o.weekendId === w.id);
+      const a = agg(ords);
+      const sold = a.porc + a.poulet + a.crevette;
+      return { wk: w, orders: ords.length, sold };
+    });
 
   return (
     <div>
@@ -100,50 +137,67 @@ function Dashboard({ setTab }: { setTab: (t: string) => void }) {
           <p className="adm-sub">Vue d&apos;ensemble des week-ends de vente en cours.</p>
         </div>
       </div>
-      <div className="adm-grid">
-        {cards.map(({ wk, orders, sold, ca }) => {
-          const pct = Math.round((sold / wk.stockTotal) * 100);
-          return (
-            <div key={wk.id} className="adm-card dash-card">
-              <div className="dash-top">
+      {cards.length === 0 ? (
+        <div className="adm-card" style={{ padding: 24, textAlign: 'center', color: 'var(--ink-faint)' }}>
+          Aucun week-end actif pour l&apos;instant.
+        </div>
+      ) : (
+        <div className="adm-grid">
+          {cards.map(({ wk, orders, sold }) => {
+            const pct = wk.stock_total > 0 ? Math.round((sold / wk.stock_total) * 100) : 0;
+            const chip = STATUS_CHIP[wk.status] ?? { cls: 'full', label: wk.status };
+            return (
+              <div key={wk.id} className="adm-card dash-card">
+                <div className="dash-top">
+                  <div>
+                    <div className="eyebrow" style={{ fontSize: 10.5 }}>Retrait · {wk.pickup_date}</div>
+                    <div className="dash-date">{wk.label}</div>
+                  </div>
+                  <span className={`status-chip ${chip.cls}`}>{chip.label}</span>
+                </div>
+                <div className="dash-stats">
+                  <div className="stat"><div className="v">{orders}</div><div className="l">commandes payées</div></div>
+                  <div className="stat"><div className="v">{sold}</div><div className="l">nems vendus</div></div>
+                  <div className="stat accent"><div className="v">{Math.round(sold * PRICE)} €</div><div className="l">chiffre d&apos;affaires</div></div>
+                </div>
                 <div>
-                  <div className="eyebrow" style={{ fontSize: 10.5 }}>Retrait · {wk.pickupDate}</div>
-                  <div className="dash-date">{wk.label}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 6, fontWeight: 600 }}>
+                    <span>{sold} / {wk.stock_total} nems</span>
+                    <span>{Math.max(0, wk.stock_total - sold)} restants</span>
+                  </div>
+                  <div className="bar-track"><div className="bar-fill" style={{ width: Math.min(100, pct) + '%' }} /></div>
                 </div>
-                <span className="status-chip open">Ouvert</span>
-              </div>
-              <div className="dash-stats">
-                <div className="stat"><div className="v">{orders}</div><div className="l">commandes payées</div></div>
-                <div className="stat"><div className="v">{sold}</div><div className="l">nems vendus</div></div>
-                <div className="stat accent"><div className="v">{Math.round(ca)} €</div><div className="l">chiffre d&apos;affaires</div></div>
-              </div>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 6, fontWeight: 600 }}>
-                  <span>{sold} / {wk.stockTotal} nems</span>
-                  <span>{wk.stockTotal - sold} restants</span>
+                <div className="btn-row">
+                  <button className="abtn primary" onClick={() => setTab('production')}>
+                    <Icon name="flame" size={15} color="#fff" /> Fiche de production
+                  </button>
+                  <button className="abtn" onClick={() => setTab('pickup')}>
+                    <Icon name="calendar" size={15} /> Retraits
+                  </button>
                 </div>
-                <div className="bar-track"><div className="bar-fill" style={{ width: pct + '%' }} /></div>
               </div>
-              <div className="btn-row">
-                <button className="abtn primary" onClick={() => setTab('production')}>
-                  <Icon name="flame" size={15} color="#fff" /> Fiche de production
-                </button>
-                <button className="abtn" onClick={() => setTab('pickup')}>
-                  <Icon name="calendar" size={15} /> Retraits
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 // ========================== PRODUCTION ==========================
 function Production() {
-  const wk = weekendById('wk-13juin')!;
-  const a = agg(A_ORDERS);
+  const data = useOverview();
+  const [wkId, setWkId] = useState('');
+  useEffect(() => {
+    if (data && data.weekends.length && !wkId) setWkId(data.weekends[0].id);
+  }, [data, wkId]);
+
+  if (!data) return admLoading;
+  const wk = data.weekends.find((w) => w.id === wkId) ?? data.weekends[0];
+  if (!wk) return <div className="adm-card" style={{ padding: 24, textAlign: 'center', color: 'var(--ink-faint)' }}>Aucun week-end.</div>;
+
+  const ords = data.orders.filter((o) => o.weekendId === wk.id);
+  const a = agg(ords);
   const total = a.porc + a.poulet + a.crevette;
   const ca = total * PRICE;
 
@@ -152,17 +206,22 @@ function Production() {
       <div className="adm-head no-print">
         <div>
           <h1 className="adm-title">Fiche de production</h1>
-          <p className="adm-sub">{wk.label} · à cuisiner pour le {wk.pickupDate.toLowerCase()}</p>
+          <p className="adm-sub">{wk.label} · à cuisiner pour le {wk.pickup_date.toLowerCase()}</p>
         </div>
-        <button className="abtn primary" onClick={() => window.print()}>
-          <Icon name="card" size={15} color="#fff" /> Imprimer
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <select className="input" style={{ width: 'auto' }} value={wk.id} onChange={(e) => setWkId(e.target.value)}>
+            {data.weekends.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+          </select>
+          <button className="abtn primary" onClick={() => window.print()}>
+            <Icon name="card" size={15} color="#fff" /> Imprimer
+          </button>
+        </div>
       </div>
 
       <div className="adm-card prod-sheet">
         <div className="print-only" style={{ marginBottom: 8 }}>
           <div style={{ fontFamily: 'var(--ff-display)', fontSize: 24 }}>La Caza J — Fiche de production</div>
-          <div style={{ color: '#555' }}>{wk.label} · retrait {wk.pickupDate}</div>
+          <div style={{ color: '#555' }}>{wk.label} · retrait {wk.pickup_date}</div>
         </div>
 
         <div style={{ fontSize: 15, color: 'var(--ink-soft)' }}>À rouler pour ce week-end :</div>
@@ -176,13 +235,13 @@ function Production() {
         <div className="prod-grand">
           <div className="eq">{a.porc} porc · {a.poulet} poulet · {a.crevette} crevette = {total} nems</div>
           <div className="meta">
-            <div><div className="v">{A_ORDERS.length}</div><div className="l">commandes</div></div>
+            <div><div className="v">{ords.length}</div><div className="l">commandes</div></div>
             <div><div className="v">{eur(ca)}</div><div className="l">total encaissé</div></div>
           </div>
         </div>
 
         <p className="adm-sub" style={{ marginTop: 18 }}>
-          Stock prévu : {wk.stockTotal} nems · marge restante : {wk.stockTotal - total} nems.
+          Stock prévu : {wk.stock_total} nems · marge restante : {Math.max(0, wk.stock_total - total)} nems.
         </p>
       </div>
     </div>
@@ -191,27 +250,41 @@ function Production() {
 
 // ========================== PICKUP LIST ==========================
 function Pickup() {
-  const wk = weekendById('wk-13juin')!;
+  const data = useOverview();
+  const [wkId, setWkId] = useState('');
   const [done, setDone] = useState<Record<string, string | null>>({});
+  useEffect(() => {
+    if (data && data.weekends.length && !wkId) setWkId(data.weekends[0].id);
+  }, [data, wkId]);
   const toggle = (ref: string) =>
     setDone((d) => ({
       ...d,
       [ref]: d[ref] ? null : new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
     }));
 
-  const slots = [...new Set(A_ORDERS.map((o) => o.slot))].sort();
-  const doneCount = Object.values(done).filter(Boolean).length;
+  if (!data) return admLoading;
+  const wk = data.weekends.find((w) => w.id === wkId) ?? data.weekends[0];
+  if (!wk) return <div className="adm-card" style={{ padding: 24, textAlign: 'center', color: 'var(--ink-faint)' }}>Aucun week-end.</div>;
+
+  const ords = data.orders.filter((o) => o.weekendId === wk.id);
+  const slots = [...new Set(ords.map((o) => o.slot))].sort();
+  const doneCount = ords.filter((o) => done[o.ref]).length;
 
   return (
     <div>
       <div className="adm-head no-print">
         <div>
           <h1 className="adm-title">Liste de retrait</h1>
-          <p className="adm-sub">{wk.label} · {wk.address} · {doneCount}/{A_ORDERS.length} retirées</p>
+          <p className="adm-sub">{wk.label} · {wk.address} · {doneCount}/{ords.length} retirées</p>
         </div>
-        <button className="abtn primary" onClick={() => window.print()}>
-          <Icon name="card" size={15} color="#fff" /> Imprimer
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <select className="input" style={{ width: 'auto' }} value={wk.id} onChange={(e) => setWkId(e.target.value)}>
+            {data.weekends.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+          </select>
+          <button className="abtn primary" onClick={() => window.print()}>
+            <Icon name="card" size={15} color="#fff" /> Imprimer
+          </button>
+        </div>
       </div>
 
       <div className="adm-card" style={{ overflow: 'hidden' }}>
@@ -226,8 +299,10 @@ function Pickup() {
             </tr>
           </thead>
           <tbody>
-            {slots.map((slotTime) => {
-              const group = A_ORDERS.filter((o) => o.slot === slotTime);
+            {ords.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-faint)', padding: 24 }}>Aucune commande pour ce week-end.</td></tr>
+            ) : slots.map((slotTime) => {
+              const group = ords.filter((o) => o.slot === slotTime);
               return (
                 <>
                   <tr key={`head-${slotTime}`} className="slot-group-head">
@@ -275,13 +350,154 @@ function Pickup() {
 }
 
 // ========================== WEEKENDS MGMT ==========================
+interface AdminWeekend {
+  id: string;
+  label: string;
+  pickup_date: string;
+  pickup_date_long: string;
+  deadline: string;
+  stock_total: number;
+  stock_left: number;
+  address: string;
+  status: string;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  open: 'Ouvert',
+  full: 'Épuisé',
+  closed: 'Fermé',
+  archived: 'Archivé',
+};
+
+const DEFAULT_ADDRESS = '12 chemin des Vergers, 44117 Saint-André-des-Eaux';
+const DEFAULT_TIME = '19:00';
+
+const FR_MONTHS_ADMIN: Record<string, number> = {
+  janvier: 0, février: 1, fevrier: 1, mars: 2, avril: 3, mai: 4, juin: 5,
+  juillet: 6, août: 7, aout: 7, septembre: 8, octobre: 9, novembre: 10,
+  décembre: 11, decembre: 11,
+};
+// "Samedi 20 juin 2026" -> "2026-06-20"
+function longToInputDate(long: string): string {
+  const m = (long || '').toLowerCase().match(/(\d{1,2})\s+([a-zàâäéèêëîïôöûüç]+)\s+(\d{4})/);
+  if (!m) return '';
+  const month = FR_MONTHS_ADMIN[m[2]];
+  if (month == null) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${m[3]}-${pad(month + 1)}-${pad(+m[1])}`;
+}
+// instant ISO -> { date, time } en heure de Paris (pour pré-remplir les champs)
+function isoToParisInputs(iso: string): { date: string; time: string } {
+  if (!iso) return { date: '', time: '' };
+  const dtf = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const p = dtf.formatToParts(new Date(iso)).reduce((a, x) => { a[x.type] = x.value; return a; }, {} as Record<string, string>);
+  const hh = p.hour === '24' ? '00' : p.hour;
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${hh}:${p.minute}` };
+}
+
 function Weekends() {
+  const [list, setList] = useState<AdminWeekend[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [label, setLabel] = useState('');
+  const [pickupDate, setPickupDate] = useState('');
+  const [deadline, setDeadline] = useState('');
+  const [deadlineTime, setDeadlineTime] = useState(DEFAULT_TIME);
+  const [stockTotal, setStockTotal] = useState('');
+  const [address, setAddress] = useState(DEFAULT_ADDRESS);
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/weekends');
+      const data = await res.json();
+      const weekends = ([...(data.weekends ?? [])] as AdminWeekend[]).sort(
+        (a, b) => longToInputDate(a.pickup_date_long).localeCompare(longToInputDate(b.pickup_date_long)),
+      );
+      setList(weekends);
+    } catch {
+      setFeedback({ type: 'err', msg: 'Impossible de charger les week-ends.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const resetForm = () => {
+    setEditingId(null);
+    setLabel(''); setPickupDate(''); setDeadline(''); setDeadlineTime(DEFAULT_TIME);
+    setStockTotal(''); setAddress(DEFAULT_ADDRESS);
+  };
+
+  const startEdit = (wk: AdminWeekend) => {
+    setFeedback(null);
+    setEditingId(wk.id);
+    setLabel(wk.label);
+    setPickupDate(longToInputDate(wk.pickup_date_long));
+    const dl = isoToParisInputs(wk.deadline);
+    setDeadline(dl.date);
+    setDeadlineTime(dl.time || DEFAULT_TIME);
+    setStockTotal(String(wk.stock_total));
+    setAddress(wk.address || DEFAULT_ADDRESS);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const save = async () => {
+    setFeedback(null);
+    if (!pickupDate || !deadline || !stockTotal || !address.trim()) {
+      setFeedback({ type: 'err', msg: 'Remplissez la date de retrait, la date limite, le stock et l’adresse.' });
+      return;
+    }
+    setSubmitting(true);
+    const editing = !!editingId;
+    try {
+      const res = await fetch('/api/weekends', {
+        method: editing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingId, label, pickupDate, deadline, deadlineTime, stockTotal: Number(stockTotal), address }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Enregistrement impossible');
+      }
+      setFeedback({ type: 'ok', msg: editing ? 'Week-end modifié !' : 'Week-end créé ! Les créneaux 18h–21h ont été générés.' });
+      resetForm();
+      await load();
+    } catch (e) {
+      setFeedback({ type: 'err', msg: e instanceof Error ? e.message : 'Enregistrement impossible' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const changeStatus = async (id: string, status: string) => {
+    try {
+      const res = await fetch('/api/weekends', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status }),
+      });
+      if (!res.ok) throw new Error();
+      await load();
+    } catch {
+      setFeedback({ type: 'err', msg: 'Mise à jour du statut impossible.' });
+    }
+  };
+
+  const isEditing = !!editingId;
+
   return (
     <div>
       <div className="adm-head">
         <div>
           <h1 className="adm-title">Week-ends de vente</h1>
-          <p className="adm-sub">Créez et pilotez vos créneaux de vente.</p>
+          <p className="adm-sub">Créez, modifiez et pilotez vos créneaux de vente.</p>
         </div>
       </div>
 
@@ -299,20 +515,37 @@ function Weekends() {
               </tr>
             </thead>
             <tbody>
-              {WEEKENDS.map((wk) => (
-                <tr key={wk.id}>
+              {loading ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-faint)', padding: 24 }}>Chargement…</td></tr>
+              ) : list.length === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-faint)', padding: 24 }}>Aucun week-end pour l’instant.</td></tr>
+              ) : list.map((wk) => (
+                <tr key={wk.id} style={editingId === wk.id ? { background: 'var(--terracotta-tint)' } : undefined}>
                   <td style={{ fontWeight: 700 }}>{wk.label}</td>
-                  <td style={{ color: 'var(--ink-soft)' }}>{wk.pickupDate}</td>
-                  <td className="num">{wk.stockLeft}/{wk.stockTotal}</td>
+                  <td style={{ color: 'var(--ink-soft)' }}>{wk.pickup_date}</td>
+                  <td className="num">{wk.stock_left}/{wk.stock_total}</td>
                   <td>
                     <span className={`status-chip ${wk.status === 'open' ? 'open' : 'full'}`}>
-                      {wk.status === 'open' ? 'Ouvert' : 'Complet'}
+                      {STATUS_LABELS[wk.status] ?? wk.status}
                     </span>
                   </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <button className="abtn ghost" style={{ padding: '7px 12px' }}>
-                      {wk.status === 'open' ? 'Fermer' : 'Archiver'}
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button className="abtn ghost" style={{ padding: '7px 10px', marginRight: 6 }} onClick={() => startEdit(wk)}>
+                      Modifier
                     </button>
+                    {wk.status === 'open' ? (
+                      <button className="abtn ghost" style={{ padding: '7px 10px' }} onClick={() => changeStatus(wk.id, 'closed')}>
+                        Fermer
+                      </button>
+                    ) : wk.status === 'archived' ? (
+                      <button className="abtn ghost" style={{ padding: '7px 10px' }} onClick={() => changeStatus(wk.id, 'open')}>
+                        Rouvrir
+                      </button>
+                    ) : (
+                      <button className="abtn ghost" style={{ padding: '7px 10px' }} onClick={() => changeStatus(wk.id, 'archived')}>
+                        Archiver
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -320,41 +553,68 @@ function Weekends() {
           </table>
         </div>
 
-        {/* create form */}
+        {/* create / edit form */}
         <div className="adm-card" style={{ padding: 22 }}>
-          <h3 style={{ fontFamily: 'var(--ff-display)', fontSize: 20, marginBottom: 16 }}>Nouveau week-end</h3>
+          <h3 style={{ fontFamily: 'var(--ff-display)', fontSize: 20, marginBottom: 16 }}>
+            {isEditing ? 'Modifier le week-end' : 'Nouveau week-end'}
+          </h3>
           <div className="adm-form">
             <div className="full">
-              <label>Label</label>
-              <input className="input" placeholder="Week-end du 27 juin" />
+              <label>Label (optionnel)</label>
+              <input className="input" placeholder="Week-end du 27 juin" value={label} onChange={(e) => setLabel(e.target.value)} />
             </div>
             <div>
               <label>Date de retrait</label>
-              <input className="input" type="date" />
-            </div>
-            <div>
-              <label>Date limite</label>
-              <input className="input" type="date" />
+              <input className="input" type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} />
             </div>
             <div>
               <label>Stock total (nems)</label>
-              <input className="input" type="number" placeholder="200" />
+              <input className="input" type="number" placeholder="200" value={stockTotal} onChange={(e) => setStockTotal(e.target.value)} />
             </div>
             <div>
-              <label>Créneaux</label>
-              <input className="input" defaultValue="17h–20h · auto" readOnly style={{ color: 'var(--ink-faint)' }} />
+              <label>Date limite</label>
+              <input className="input" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            </div>
+            <div>
+              <label>Heure limite</label>
+              <input className="input" type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} />
+            </div>
+            <div className="full">
+              <label>Créneaux de retrait</label>
+              <input className="input" defaultValue="18h–21h · auto" readOnly style={{ color: 'var(--ink-faint)' }} />
             </div>
             <div className="full">
               <label>Adresse de retrait</label>
-              <input className="input" defaultValue="12 chemin des Vergers, 44117 Saint-André-des-Eaux" />
+              <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} />
             </div>
             <div className="full">
-              <button className="abtn primary" style={{ width: '100%', justifyContent: 'center', padding: '13px' }}>
-                <Icon name="plus" size={16} color="#fff" /> Créer le week-end
+              <button
+                className="abtn primary"
+                style={{ width: '100%', justifyContent: 'center', padding: '13px', opacity: submitting ? 0.6 : 1 }}
+                onClick={save}
+                disabled={submitting}
+              >
+                <Icon name={isEditing ? 'check' : 'plus'} size={16} color="#fff" />{' '}
+                {submitting ? 'Enregistrement…' : isEditing ? 'Enregistrer les modifications' : 'Créer le week-end'}
               </button>
             </div>
+            {isEditing && (
+              <button
+                className="abtn ghost full"
+                style={{ width: '100%', justifyContent: 'center', padding: '11px' }}
+                onClick={resetForm}
+                disabled={submitting}
+              >
+                Annuler
+              </button>
+            )}
+            {feedback && (
+              <p className="full" style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: feedback.type === 'ok' ? 'var(--herb-deep)' : '#b3261e' }}>
+                {feedback.msg}
+              </p>
+            )}
             <p className="full adm-sub" style={{ margin: 0 }}>
-              Les créneaux de 15 min (17h → 20h) sont générés automatiquement.
+              Les créneaux de 30 min (18h → 21h) sont générés automatiquement.
             </p>
           </div>
         </div>
@@ -364,8 +624,89 @@ function Weekends() {
 }
 
 // ========================== ADMIN ROOT ==========================
+// ========================== LOGIN ==========================
+function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    setError('');
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/admin-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Connexion impossible');
+      }
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Connexion impossible');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#efe7d8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div className="adm-card" style={{ padding: 28, width: '100%', maxWidth: 360 }}>
+        <h1 style={{ fontFamily: 'var(--ff-display)', fontSize: 24, marginBottom: 6 }}>Espace Jenny</h1>
+        <p className="adm-sub" style={{ marginBottom: 18 }}>Entrez le mot de passe pour accéder à l’administration.</p>
+        <div className="adm-form">
+          <div className="full">
+            <label>Mot de passe</label>
+            <input
+              className="input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+              autoFocus
+            />
+          </div>
+          {error && <p className="full" style={{ margin: 0, color: '#b3261e', fontSize: 13.5, fontWeight: 600 }}>{error}</p>}
+          <div className="full">
+            <button
+              className="abtn primary"
+              style={{ width: '100%', justifyContent: 'center', padding: '13px', opacity: submitting ? 0.6 : 1 }}
+              onClick={submit}
+              disabled={submitting}
+            >
+              {submitting ? 'Connexion…' : 'Se connecter'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
+  const [authed, setAuthed] = useState<boolean | null>(null);
   const [tab, setTab] = useState('dashboard');
+
+  useEffect(() => {
+    fetch('/api/admin-auth')
+      .then((r) => r.json())
+      .then((d) => setAuthed(!!d.authed))
+      .catch(() => setAuthed(false));
+  }, []);
+
+  if (authed === null) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#efe7d8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-faint)' }}>
+        Chargement…
+      </div>
+    );
+  }
+
+  if (!authed) {
+    return <AdminLogin onSuccess={() => setAuthed(true)} />;
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#efe7d8' }}>

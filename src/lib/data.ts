@@ -2,7 +2,7 @@
 
 import { supabase } from '@/lib/supabase'
 
-export const PRICE = 1.30;
+export const PRICE = 1.60;
 
 export interface Product {
   id: string;
@@ -97,12 +97,13 @@ export const PRODUCTS: Product[] = [
 
 function buildSlots(fullList: Record<string, number> = {}): Slot[] {
   const slots: Slot[] = [];
-  for (let h = 17; h < 20; h++) {
-    for (let m = 0; m < 60; m += 15) {
+  for (let h = 18; h <= 21; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      if (h === 21 && m > 0) break;
       const label = `${h}h${m === 0 ? '00' : m}`;
       const id = `${h}:${m}`;
       const count = fullList[id] != null ? fullList[id] : 0;
-      slots.push({ id, label, count, max: 3 });
+      slots.push({ id, label, count, max: 8 });
     }
   }
   return slots;

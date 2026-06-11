@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Caveat:wght@500;600;700&family=Hanken+Grotesque:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Caveat:wght@500;600;700&family=Great+Vibes&family=Hanken+Grotesque:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -14,6 +14,7 @@
   --terracotta:      #C45C39;
   --terracotta-deep: #A2462A;
   --terracotta-tint: #F6E2D5;
+  --logo-red:        #C8312B;
   --herb:            #5E7A41;
   --herb-deep:       #4A6232;
   --herb-tint:       #E6EBDA;
@@ -34,6 +35,7 @@
 
   --ff-display: 'DM Serif Display', Georgia, serif;
   --ff-hand:    'Caveat', cursive;
+  --ff-script:  'Great Vibes', cursive;
   --ff-body:    'Hanken Grotesque', system-ui, sans-serif;
 }
 
@@ -103,7 +105,8 @@ html, body {
   display: flex; flex-direction: column; line-height: 0.86; flex-shrink: 0;
 }
 .brandmark .lc-small { font-family: var(--ff-hand); font-size: 18px; color: var(--terracotta); margin-bottom: -3px; margin-left: 1px; }
-.brandmark .lc-name { font-family: var(--ff-display); font-size: 23px; letter-spacing: 0.2px; white-space: nowrap; }
+.brandmark .lc-name { font-family: var(--ff-script); font-size: 34px; line-height: 1; color: var(--ink); letter-spacing: 0.5px; white-space: nowrap; }
+.brandmark .lc-name .lc-j { color: var(--logo-red); font-size: 1.3em; }
 
 .icon-btn {
   width: 40px; height: 40px; border-radius: 50%;
@@ -135,6 +138,30 @@ html, body {
 .faint { color: var(--ink-faint); }
 h1,h2,h3,h4,p { margin: 0; }
 
+/* ---- How it works (steps) ---- */
+.steps { display: flex; flex-direction: column; }
+.step { display: flex; gap: 14px; }
+.step-rail { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+.step-dot {
+  position: relative; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--terracotta-tint); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+}
+.step-num {
+  position: absolute; top: -5px; right: -5px;
+  width: 19px; height: 19px; border-radius: 50%;
+  background: var(--terracotta-deep); color: #fff;
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.step-line {
+  flex: 1; width: 0; min-height: 18px; margin: 4px 0;
+  border-left: 2px dotted var(--line-strong);
+}
+.step-body { padding-bottom: 22px; }
+.step:last-child .step-body { padding-bottom: 0; }
+.step-title { font-weight: 700; font-size: 16px; color: var(--ink); }
+
 /* ===========================================================
    Buttons
    =========================================================== */
@@ -157,6 +184,16 @@ h1,h2,h3,h4,p { margin: 0; }
 .btn-ghost { background: var(--paper); color: var(--ink); border: 1.5px solid var(--line-strong); box-shadow: var(--shadow-sm); }
 .btn-herb { background: var(--herb); color: #fff; box-shadow: 0 4px 0 var(--herb-deep), var(--shadow-sm); }
 .btn-herb:active { box-shadow: 0 1px 0 var(--herb-deep); transform: translateY(3px); }
+/* Bouton secondaire vert (ghost) — même gabarit que .btn */
+/* bordure via ombre interne pour ne pas modifier la hauteur */
+.btn-herb-ghost {
+  background: transparent;
+  color: var(--herb-deep);
+  box-shadow: inset 0 0 0 1.5px var(--herb);
+}
+.btn-herb-ghost:hover { background: var(--herb-tint); }
+.btn-herb-ghost:active { transform: translateY(1px); }
+.btn-herb-ghost:disabled, .btn-herb-ghost[disabled] { opacity: .55; cursor: not-allowed; }
 .btn-sm { padding: 11px 16px; font-size: 14px; border-radius: var(--r-sm); width: auto; }
 
 /* ===========================================================
@@ -219,12 +256,43 @@ h1,h2,h3,h4,p { margin: 0; }
 .wk-thumb { width: 78px; height: 78px; border-radius: var(--r-md); flex-shrink: 0; }
 .wk-thumb .ph-label { font-size: 8px; margin: 5px; padding: 2px 5px; }
 .wk-date { font-family: var(--ff-display); font-size: 21px; line-height: 1.05; }
-.wk-sub { font-size: 13.5px; color: var(--ink-soft); margin-top: 3px; }
+.wk-sub { font-size: 13.5px; color: var(--ink-soft); margin-top: 3px; display: flex; align-items: center; gap: 5px; }
 .wk-body { padding: 14px 16px 16px; }
 .wk-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 
+/* barre de progression (nems restants) */
+.wk-progress { height: 7px; border-radius: 99px; background: var(--terracotta-tint); overflow: hidden; }
+.wk-progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--gold), var(--terracotta)); transition: width .4s ease; }
+.wk-progress-label { font-size: 13px; color: var(--ink-soft); margin: 8px 0 14px; }
+.wk-progress-label strong { color: var(--ink); }
+
+/* encadré date limite + décompte */
+.wk-deadline { background: var(--terracotta-tint); border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 14px; }
+.wk-deadline-head { font-size: 13px; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; text-align: center; margin-bottom: 10px; }
+.wk-deadline-head strong { color: var(--ink); }
+
+/* état bloqué : épuisé / trop tard */
+.wk-blocked .wk-thumb { filter: grayscale(0.7); opacity: 0.65; }
+.wk-cta-title { font-weight: 800; font-size: 15.5px; color: var(--ink); margin-bottom: 6px; }
+.wk-cta-text { font-size: 13.5px; color: var(--ink-soft); line-height: 1.45; margin-bottom: 14px; }
+.wk-sub-form { display: flex; gap: 8px; }
+
+/* Inscription inline sur les cartes indisponibles (action tertiaire) */
+.card-signup-link {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 2px;
+  padding: 0; border: none; background: none; cursor: pointer;
+  font-family: var(--ff-body); font-weight: 600; font-size: 13.5px; color: var(--herb-deep);
+}
+.card-signup-link:hover { text-decoration: underline; }
+.card-signup { margin-top: 8px; animation: card-signup-in .18s ease; }
+.card-signup-row { display: flex; gap: 8px; }
+.card-signup-err { color: var(--terracotta-deep); font-size: 12.5px; font-weight: 600; margin-top: 6px; }
+.card-signup-ok { display: flex; align-items: center; gap: 6px; color: var(--herb-deep); font-weight: 600; font-size: 13.5px; }
+@keyframes card-signup-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.wk-cta-ok { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--herb-deep); }
+
 /* countdown */
-.cd { display: inline-flex; align-items: center; gap: 6px; }
+.cd { display: flex; justify-content: center; align-items: center; gap: 6px; }
 .cd-box {
   background: var(--ink); color: var(--cream);
   font-variant-numeric: tabular-nums; font-weight: 800;
